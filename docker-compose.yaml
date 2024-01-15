@@ -1,0 +1,94 @@
+version: "3"
+
+services:
+  service-a:
+    container_name: service-a
+    build:
+      context: .
+      dockerfile: Dockerfile.ServiceA
+    image: service-a:latest
+    environment:
+      - KAFKA_SERVER_URL=kafka:9092
+      - HTTP_SERVER_PORT=8080
+      - KAFKA_TOPIC=testcontainers
+    ports:
+      - 8080:8080
+    networks:
+      - apache
+    depends_on:
+      - kafka
+
+  service-b:
+    container_name: service-b
+    build:
+      context: .
+      dockerfile: Dockerfile.ServiceB
+    image: service-b:latest
+    environment:
+      - KAFKA_SERVER_URL=kafka:9092
+      - KAFKA_TOPIC=testcontainers
+      - DATABASE_URL=host=database port=5432 user=admin password=safe_pwd dbname=testcontainers sslmode=disable
+    networks:
+      - apache
+    depends_on:
+      - kafka
+      - database
+
+  database:
+    container_name: database
+    image: postgres:15.2-alpine
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=safe_pwd
+      - POSTGRES_DB=testcontainers
+    volumes:
+      - ./connections/database/script/bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap.sql
+    ports:
+      - 5432:5432
+    networks:
+      - apache
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - apache
+
+  kafka:
+    container_name: kafka
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENERS: INTERNAL://:9092,OUTSIDE://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,OUTSIDE://host.docker.internal:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:PLAINTEXT
+    networks:
+      - apache
+
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:6.0.1
+    hostname: control-center
+    depends_on:
+      - kafka
+    ports:
+      - "9021:9021"
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: "kafka:9092"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_CONNECT_CLUSTER: http://app-connect:8083
+      PORT: 9021
+    networks:
+      - apache
+
+networks:
+  apache:
+    driver: bridge

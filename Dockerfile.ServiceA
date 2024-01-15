@@ -1,0 +1,6 @@
+FROM golang:1.21
+WORKDIR /app
+COPY . .
+RUN apt-get update && apt-get install build-essential librdkafka-dev -y
+RUN go build -o ./serviceA ./cmd/serviceA/main.go
+CMD [ "./serviceA" ]
