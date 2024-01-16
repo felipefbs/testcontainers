@@ -3,94 +3,69 @@ package queue
 import (
 	"context"
 	"log/slog"
-	"strings"
+	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/segmentio/kafka-go"
 )
 
 type MessageSender struct {
-	producer *kafka.Producer
+	producer *kafka.Writer
+	kafka    *kafka.Conn
 }
 
-func NewMessageSender(url ...string) *MessageSender {
-	config := &kafka.ConfigMap{
-		"bootstrap.servers": strings.Join(url, ""),
-	}
-
-	p, err := kafka.NewProducer(config)
+func NewMessageSender(ctx context.Context, url string, additionalConfig map[string]string) *MessageSender {
+	conn, err := kafka.DialLeader(ctx, "tcp", url, "testcontainers", 0)
 	if err != nil {
-		slog.Error("failed to create producer", err)
-
-		return nil
+		slog.Error("failed to connect to kafka", "error", err)
 	}
-
-	return &MessageSender{producer: p}
+	return &MessageSender{kafka: conn}
 }
 
-func (queue *MessageSender) SendMessage(ctx context.Context, topic string, message, key []byte, deliveryChan chan kafka.Event) error {
-	msg := &kafka.Message{
-		Value: message,
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: kafka.PartitionAny,
-		},
-		Key: key,
+func (queue *MessageSender) SendMessage(ctx context.Context, topic string, message, key []byte) error {
+	queue.kafka.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	msg := kafka.Message{
+		Topic:     topic,
+		Partition: 0,
+		Key:       nil,
+		Value:     message,
 	}
 
-	err := queue.producer.Produce(msg, deliveryChan)
+	i, err := queue.kafka.WriteMessages(msg)
 	if err != nil {
-		slog.Error("Failed to produce message", err)
+		slog.Error("failed to write message", "error", err)
 
 		return err
 	}
 
+	slog.Info("bytes writen", "int", i)
 	return nil
 }
 
 type MessageReader struct {
-	consumer *kafka.Consumer
+	consumer *kafka.Reader
 }
 
 func NewMessageReader(url string, additionalConfig map[string]string) *MessageReader {
-	config := &kafka.ConfigMap{
-		"bootstrap.servers": url,
-		"group.id":          "testcontainers-consumer",
+	config := kafka.ReaderConfig{
+		Brokers:     []string{url},
+		Topic:       "testcontainers",
+		GroupID:     "testcontainers-reader",
+		StartOffset: kafka.FirstOffset,
+		MaxBytes:    10e6,
 	}
 
-	for k, v := range additionalConfig {
-		config.SetKey(k, v)
-	}
+	r := kafka.NewReader(config)
 
-	consumer, err := kafka.NewConsumer(config)
-	if err != nil {
-		slog.Error("failed to create consumer")
-
-		return nil
-	}
-
-	return &MessageReader{consumer: consumer}
+	return &MessageReader{consumer: r}
 }
 
 func (queue *MessageReader) ReadMessage(ctx context.Context, topic string, receiveChan chan []byte) error {
-	err := queue.consumer.Subscribe(topic, nil)
-	if err != nil {
-		slog.Error("failed to subscribe", "topic", topic)
-		return err
-	}
-
-	go func() {
-		for {
-			ev := queue.consumer.Poll(1000)
-			switch e := ev.(type) {
-			case *kafka.Message:
-				slog.Info("message received", "value", e.Value)
-				receiveChan <- e.Value
-			case kafka.Error:
-				slog.Error("failed to receive message")
-			}
-
+	for {
+		msg, err := queue.consumer.ReadMessage(ctx)
+		if err != nil {
+			slog.Error("failed to receive message", "error", err)
 		}
-	}()
-
-	return nil
+		slog.Info("message received", "message", msg)
+		receiveChan <- msg.Value
+	}
 }

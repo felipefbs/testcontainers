@@ -1,6 +1,9 @@
-FROM golang:1.21
+FROM golang:1.21-alpine as go-builder
 WORKDIR /app
 COPY . .
-RUN apt-get update && apt-get install build-essential librdkafka-dev -y
 RUN go build -o ./serviceB ./cmd/serviceB/main.go
+
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=go-builder /app/serviceB .
 CMD [ "./serviceB" ]

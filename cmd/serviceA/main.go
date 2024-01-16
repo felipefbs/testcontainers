@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/felipefbs/testcontainers/connections/queue"
 	"github.com/felipefbs/testcontainers/message"
 	"github.com/joho/godotenv"
@@ -64,9 +64,8 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messageSender := queue.NewMessageSender(os.Getenv("KAFKA_SERVER_URL"))
-	deliveryChan := make(chan kafka.Event)
-	err = messageSender.SendMessage(r.Context(), os.Getenv("KAFKA_TOPIC"), msgBytes, nil, deliveryChan)
+	messageSender := queue.NewMessageSender(context.Background(), os.Getenv("KAFKA_SERVER_URL"), map[string]string{})
+	err = messageSender.SendMessage(r.Context(), os.Getenv("KAFKA_TOPIC"), msgBytes, nil)
 	if err != nil {
 		slog.Error("failed to send message", err)
 		w.WriteHeader(http.StatusInternalServerError)
