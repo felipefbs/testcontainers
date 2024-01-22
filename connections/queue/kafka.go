@@ -9,8 +9,7 @@ import (
 )
 
 type MessageSender struct {
-	producer *kafka.Writer
-	kafka    *kafka.Conn
+	kafka *kafka.Conn
 }
 
 func NewMessageSender(ctx context.Context, url string, additionalConfig map[string]string) *MessageSender {
@@ -18,11 +17,16 @@ func NewMessageSender(ctx context.Context, url string, additionalConfig map[stri
 	if err != nil {
 		slog.Error("failed to connect to kafka", "error", err)
 	}
+
 	return &MessageSender{kafka: conn}
 }
 
 func (queue *MessageSender) SendMessage(ctx context.Context, topic string, message, key []byte) error {
-	queue.kafka.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	err := queue.kafka.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err != nil {
+		return err
+	}
+
 	msg := kafka.Message{
 		Topic:     topic,
 		Partition: 0,

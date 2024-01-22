@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"time"
 
@@ -19,13 +20,22 @@ func main() {
 func KafkaConsume(ctx context.Context, db *database.Database) {
 	reader := queue.NewMessageReader(os.Getenv("KAFKA_SERVER_URL"), map[string]string{})
 	receiveChan := make(chan []byte, 10)
-	reader.ReadMessage(ctx, "testcontainers", receiveChan)
+	err := reader.ReadMessage(ctx, "testcontainers", receiveChan)
+	if err != nil {
+		slog.Error("failed to read message", "error", err)
+	}
 
 	for {
 		receivedMsg := <-receiveChan
 		msg := message.Message{}
-		json.Unmarshal(receivedMsg, &msg)
+		err := json.Unmarshal(receivedMsg, &msg)
+		if err != nil {
+			slog.Error("failed to decode message", "error", err)
+		}
 		msg.ReceivedAt = time.Now()
-		db.Save(ctx, msg)
+		err = db.Save(ctx, msg)
+		if err != nil {
+			slog.Error("failed to save message", "error", err)
+		}
 	}
 }
