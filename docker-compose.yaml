@@ -74,21 +74,6 @@ services:
     networks:
       - apache
 
-  control-center:
-    image: confluentinc/cp-enterprise-control-center:6.0.1
-    hostname: control-center
-    depends_on:
-      - kafka
-    ports:
-      - "9021:9021"
-    environment:
-      CONTROL_CENTER_BOOTSTRAP_SERVERS: "kafka:9092"
-      CONTROL_CENTER_REPLICATION_FACTOR: 1
-      CONTROL_CENTER_CONNECT_CLUSTER: http://app-connect:8083
-      PORT: 9021
-    networks:
-      - apache
-
 networks:
   apache:
     driver: bridge
